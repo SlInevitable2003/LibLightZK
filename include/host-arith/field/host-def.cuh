@@ -1,0 +1,1 @@
+#define MINI_NUMB_BITS 64
