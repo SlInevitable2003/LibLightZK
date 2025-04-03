@@ -78,6 +78,8 @@ public:
         timer.stop("NTT Setup");
 
         timer.start();
+        int dev_cnt;
+        cudaGetDeviceCount(&dev_cnt);
 
         alpha1.allocate(1, xpu::mem_policy::cross_platform); beta1.allocate(1, xpu::mem_policy::cross_platform); delta1.allocate(1, xpu::mem_policy::cross_platform);
         beta2.allocate(1, xpu::mem_policy::cross_platform); delta2.allocate(1, xpu::mem_policy::cross_platform);
@@ -92,6 +94,7 @@ public:
         #pragma omp parallel for
         for (size_t i = 0; i < N + 1; i++) ss[i] = FieldT::random_element();
         ss.store();
+        #pragma omp parallel for
         (fix_base_multi_scalar_multiplication_g1<devFdT, dG1>)<<<324, 510>>>((dG1*)a1.p(), (devFdT*)ss.p(), N + 1);
         
         b1.allocate(pc.win_cnt * (N + 1), xpu::mem_policy::device_only);

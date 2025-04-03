@@ -35,11 +35,6 @@ namespace xpu {
                 } break;
             }
         }
-        vector(size_t cpu_size, size_t gpu_size) : size_(cpu_size), mp(mem_policy::cross_platform) 
-        {
-            cpu_data = new T[cpu_size];
-            cudaMalloc((void**)&gpu_data, gpu_size * sizeof(T));
-        }
 
         void allocate(size_t size__, mem_policy mp_ = mem_policy::host_only) 
         {
