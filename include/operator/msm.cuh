@@ -12,7 +12,8 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
     __syncthreads();
 
     for (size_t i = tid; i < length; i += stride) {
-        shmem[threadIdx.x].zero(); scalars[i].from();
+        shmem[threadIdx.x].zero(); 
+        if (threadIdx.x & 1) scalars[i].from();
         uint32_t *p = (uint32_t *)(scalars + i);
         for (size_t j = 8 * sizeof(devFdT); j > 0; j--) {
             shmem[threadIdx.x].dbl();
@@ -33,7 +34,8 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
     __syncthreads();
 
     for (size_t i = tid; i < length; i += stride) {
-        shmem[threadIdx.x].zero(); scalars[i].from();
+        shmem[threadIdx.x].zero(); 
+        if (threadIdx.x & 1) scalars[i].from();
         uint32_t *p = (uint32_t *)(scalars + i);
         for (size_t j = 8 * sizeof(devFdT); j > 0; j--) {
             shmem[threadIdx.x].dbl();
