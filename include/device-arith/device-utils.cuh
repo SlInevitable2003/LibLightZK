@@ -1,6 +1,6 @@
 #pragma once
 #include <iostream>
-#define CUDA_DEBUG cudaDeviceSynchronize(); std::cout << __LINE__ << " " << cudaGetErrorString(cudaGetLastError()) << std::endl;
+#define CUDA_DEBUG cudaDeviceSynchronize(); printf("%d %s\n", __LINE__, cudaGetErrorString(cudaGetLastError()));
 
 __device__ __host__ inline void vec_select(void* dst, const void* a, const void* b, size_t size, bool cond) 
 {
@@ -31,3 +31,6 @@ __device__ void lock(int *mutex) {
 __device__ void unlock(int *mutex) {
     atomicExch(mutex, 0);
 }
+
+#include <vector>
+#include <cuda_runtime.h>
