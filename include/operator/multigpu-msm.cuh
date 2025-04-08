@@ -33,7 +33,7 @@ __global__ __launch_bounds__(1024, 2) void pre_comp_g1_part(size_t length, dG1 *
         points[i].to_affine();
         dG1 cur = points[i];
         for (size_t j = 1; j < level_lo; j++) for (size_t k = 0; k < gap; k++) cur.dbl();
-        for (size_t j = level_lo; j < level_hi; j++) {
+        for (size_t j = level_lo + (level_lo == 0); j < level_hi; j++) {
             for (size_t k = 0; k < gap; k++) cur.dbl();
             points[i + (j - level_lo) * length] = cur;
             points[i + (j - level_lo) * length].to_affine();
@@ -47,7 +47,7 @@ void multi_launch_pre_comp_g1(size_t length, xpu::multigpu_vector<G1T, dev_cnt> 
     #pragma omp parallel for
     for (int dev = 0; dev < dev_cnt; dev++) {
         cudaSetDevice(dev);
-        (pre_comp_g1_part<dG1>)<<<216, 1024>>>(length, (dG1*)points.p(dev), gap, max(dev * dev_gap, size_t(1)), min((dev + 1) * dev_gap, level));
+        (pre_comp_g1_part<dG1>)<<<216, 1024>>>(length, (dG1*)points.p(dev), gap, dev * dev_gap, min((dev + 1) * dev_gap, level));
         cudaDeviceSynchronize();
     }
 }

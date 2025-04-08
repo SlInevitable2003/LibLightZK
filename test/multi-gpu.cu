@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     for (size_t i = 1; i < num_threads; i++) local_acc[0] = local_acc[0] + local_acc[i];
     timer.stop("Parallel Acuumulation");
 
-    // assert(local_acc[0] == gpu_ans);
+    assert(local_acc[0] == gpu_ans);
     printf("Everything is OK!\n");
 
     return 0;
