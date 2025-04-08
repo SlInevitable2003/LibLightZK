@@ -1,3 +1,5 @@
+#include <typeinfo>
+#include <iostream>
 #include "device-utils.cuh"
 #include "timer.cuh"
 #include "groth16-operator.cuh"
@@ -5,6 +7,8 @@
 #include "alt_bn128_g1.cuh"
 #include "alt_bn128_g2.cuh"
 #include "omp.h"
+
+#include "alt_bn128_init.cuh"
 
 const size_t n = 1 << 20;
 const size_t win_siz = 12;
@@ -17,8 +21,9 @@ int main(int argc, char *argv[])
 
     libff::init_alt_bn128_params();
 
-    xpu::vector<libff::alt_bn128_G1> dev_points(win_cnt * n, xpu::mem_policy::device_only);
-    xpu::vector<libff::alt_bn128_Fr> dev_scalars(n, xpu::mem_policy::cross_platform);
+    xpu::vector<libff::alt_bn128_G1> dev_points(win_cnt * n, xpu::mem_policy::cross_platform);  //device变量
+    //xpu::vector<libff::alt_bn128_G1> check_points(n);
+    xpu::vector<libff::alt_bn128_Fr> dev_scalars(n, xpu::mem_policy::cross_platform);    //混合变量
 
     timer.start();
     #pragma omp parallel for
@@ -26,10 +31,20 @@ int main(int argc, char *argv[])
     dev_scalars.store();
 
     (fix_base_multi_scalar_multiplication_g1<alt_bn128::fr_t, alt_bn128::g1_t>)<<<160, 510>>>((alt_bn128::g1_t*)dev_points.p(), (alt_bn128::fr_t*)dev_scalars.p(), n);
+
+    dev_points.load();
+
+    // for(int i=0;i<n;i++){
+    //     check_points[i] = libff::alt_bn128_G1::G1_one;
+    //     check_points[i] = dev_scalars[i] * check_points[i];
+    //     assert(check_points[i] == dev_points[i]);
+        
+    // }
     (pre_comp_g1<alt_bn128::g1_t>)<<<160, 1024>>>(n, (alt_bn128::g1_t*)dev_points.p(), win_siz, win_cnt);
     CUDA_DEBUG;
     timer.stop();
 
+    
     #pragma omp parallel for
     for (size_t i = 0; i < n; i++) dev_scalars[i] = libff::alt_bn128_Fr::random_element();
     dev_scalars.store();

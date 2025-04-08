@@ -116,7 +116,7 @@ public:
         #pragma omp parallel for
         for (size_t i = 0; i < N + 1; i++) ss[i] = FieldT::random_element();
         ss.store();
-        (fix_base_multi_scalar_multiplication_g2<devFdT, dG2>)<<<324, 510>>>((dG2*)b2.p(), (devFdT*)ss.p(), N + 1);
+        (<devFdT, dG2>)<<<324, 510>>>((dG2*)b2.p(), (devFdT*)ss.p(), N + 1);
 
         CUDA_DEBUG;
         timer.stop("Proving Key Setup");

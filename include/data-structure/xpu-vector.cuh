@@ -82,6 +82,15 @@ namespace xpu {
             cudaMemcpy(gpu_data, cpu_data, size_ * sizeof(T), cudaMemcpyHostToDevice);
         }
 
+        void store(size_t length) {
+            assert(mp == mem_policy::cross_platform);
+            cudaMemcpy(gpu_data, cpu_data, length * sizeof(T), cudaMemcpyHostToDevice);
+        }
+        // void store(void *src, size_t length) {
+        //     assert(mp != mem_policy::host_only);
+        //     cudaMemcpy(gpu_data, src, length * sizeof(T), cudaMemcpyHostToDevice);
+        // }
+
         void load() {
             assert(mp == mem_policy::cross_platform);
             cudaMemcpy(cpu_data, gpu_data, size_ * sizeof(T), cudaMemcpyDeviceToHost);

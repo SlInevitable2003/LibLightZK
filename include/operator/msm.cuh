@@ -1,6 +1,7 @@
 #pragma once
-#include "device-utils.cuh"
 
+#include "device-utils.cuh"
+#include "alt_bn128_t.cuh"
 template <typename devFdT, typename dG1>
 __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g1(dG1 *dest, devFdT *scalars, const size_t length)
 {
@@ -24,22 +25,26 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
 
 template <typename devFdT, typename dG2>
 __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g2(dG2 *dest, devFdT *scalars, const size_t length)
-{
+{ 
     size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) / 2, stride = gridDim.x * blockDim.x / 2;
 
     __shared__ dG2 shmem[510];
-    __shared__ dG2 uni[2];
-    if (threadIdx.x <= 1) uni[threadIdx.x].one();
+    //__shared__ dG2 uni[2];
+   // if (threadIdx.x <= 1) uni[threadIdx.x].one();
     __syncthreads();
 
     for (size_t i = tid; i < length; i += stride) {
-        shmem[threadIdx.x].zero(); scalars[i].from();
+        shmem[threadIdx.x].zero(); 
+        if((threadIdx.x&1)==0) scalars[i].from();
+        //__syncthreads();
         uint32_t *p = (uint32_t *)(scalars + i);
         for (size_t j = 8 * sizeof(devFdT); j > 0; j--) {
             shmem[threadIdx.x].dbl();
-            if ((p[(j - 1) / 32] >> ((j - 1) % 32)) & 1) shmem[threadIdx.x].dadd(uni[threadIdx.x & 1]);
+            if ((p[(j - 1) / 32] >> ((j - 1) % 32)) & 1) shmem[threadIdx.x].dadd(dest[2 * i + (threadIdx.x & 1)]);
         }
+        //
         dest[2 * i + (threadIdx.x & 1)] = shmem[threadIdx.x];
+        
     }
 }
 
@@ -57,7 +62,7 @@ __global__ __launch_bounds__(1024, 2) void pre_comp_g1(size_t length, dG1 *point
         }
     }
 }
-template<typename dG2> 
+template<typename dG2>                               //(        n,                      win_siz,     win_cnt);
 __global__ __launch_bounds__(1024, 2) void pre_comp_g2(size_t length, dG2 *points, size_t gap, size_t level)
 {
     size_t tid = threadIdx.x + blockIdx.x * blockDim.x, stride = blockDim.x * gridDim.x;
@@ -66,8 +71,8 @@ __global__ __launch_bounds__(1024, 2) void pre_comp_g2(size_t length, dG2 *point
         dG2 cur = points[i];
         for (size_t j = 1; j < level; j++) {
             for (size_t k = 0; k < gap; k++) cur.dbl();
-            points[i + j * length] = cur;
-            points[i + j * length].to_affine();
+            points[i + 2 * j * length] = cur;
+            points[i + 2 * j * length].to_affine();
         }
     }
 }
@@ -121,7 +126,9 @@ __global__ __launch_bounds__(1024, 2) void bucket_accumulation_g1(
     size_t bucket_tail = bucket_top[bucket_id];
 
     dG1 acc, incr; acc.zero();
-    for (size_t i = bucket_tail - bucket_siz[bucket_id] + tid; i < bucket_tail; i += 32) acc.aadd(points[point_idx[i]]);
+
+    
+    for (size_t i = bucket_tail - bucket_siz[bucket_id] + tid; i < bucket_tail; i += 32) acc.add(points[point_idx[i]]);
     for (size_t offset = 16; offset > 0; offset >>= 1) {
         for (uint32_t j = 0; j < sizeof(dG1) / sizeof(uint32_t); j++) 
             ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
@@ -218,7 +225,7 @@ void multi_scalar_multiplication_g1(
                           warp_lft_bucket(108 * 64, xpu::mem_policy::device_only),
                           warp_rht_bucket(108 * 64, xpu::mem_policy::device_only);
     xpu::vector<dG1> bucket_sum(bucket_cnt, xpu::mem_policy::device_only);
-
+    //printf("%u bytes\n", sizeof(points[0]));
     bucket_siz.clear();
     (bucket_scatter_count<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
     bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt);
@@ -246,4 +253,44 @@ void multi_scalar_multiplication_g2(
     (bucket_accumulation_g2<dG2>)<<<128, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG2*)bucket_sum.p());
     (bucket_scale_g2<dG2>)<<<64, 64>>>((dG2*)bucket_sum.p(), bucket_cnt);
     (bucket_reduce_g2<dG2>)<<<1, 32>>>((dG2*)bucket_sum.p(), bucket_cnt, dest);
+}
+
+
+template<typename dG2> 
+__global__ __launch_bounds__(512, 1) void xy_to_xxyy(dG2 *ps, const size_t n)
+{
+    int tid = threadIdx.x;
+    //__shared__ alt_bn128::g2_t shmem[BLK_SIZ];
+    //shmem[tid].zero();
+    __syncthreads();
+
+    dG2 incr;
+    for (int i = tid; i < 2 * n; i += 512) {
+        incr=ps[i];
+        //incr.read_from((alt_bn128::fp_t*)(ps + (i&(~1))));
+        //shmem[tid].dadd(incr);
+        incr.write_to((alt_bn128::fp_t*)(ps + (i&(~1))));
+    }
+    __syncthreads();
+
+    //if (tid <= 1) shmem[tid].write_to((alt_bn128::fp_t*)ps);
+}
+
+
+template<typename dG2> 
+__global__ __launch_bounds__(512, 1) void xxyy_to_xy(dG2 *ps, const size_t n)
+{
+    int tid = threadIdx.x;
+    //__shared__ alt_bn128::g2_t shmem[BLK_SIZ];
+    //shmem[tid].zero();
+    __syncthreads();
+
+    dG2 incr;
+    for (int i = tid; i < 2 * n; i += 512) {
+        
+        incr.read_from((alt_bn128::fp_t*)(ps + (i&(~1))));
+        ps[i]=incr;
+        
+    }
+    __syncthreads();
 }

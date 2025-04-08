@@ -48,6 +48,9 @@
         "stdexcept": "cpp",
         "streambuf": "cpp",
         "typeinfo": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "numbers": "cpp"
     }
 }

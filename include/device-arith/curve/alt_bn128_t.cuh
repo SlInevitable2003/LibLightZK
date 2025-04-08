@@ -237,7 +237,7 @@ namespace alt_bn128 {
 
         __device__ __forceinline__ void zero() { 
             ((fp_t*)this)[0] = ((fp_t*)this)[2] = fp_t::one(1);
-            ((fp_t*)this)[1] = fp_mont::csel(fp_t::one(), fp_t::one(1), (threadIdx.x & 1) == 0); 
+            ((fp_t*)this)[1] = fp_mont::csel(fp_t::one(), fp_t::one(1), (threadIdx.x & 1) == 0);  
         }
         __device__ __forceinline__ void one() { 
             ((fp_t*)this)[0] = ((fp_t*)this)[2] = fp_mont::csel(fp_t::one(), fp_t::one(1), (threadIdx.x & 1) == 0);

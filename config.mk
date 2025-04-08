@@ -1,1 +1,1 @@
-ARCH := sm_80
+ARCH := sm_75
