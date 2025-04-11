@@ -444,90 +444,90 @@ public:
     /*
      * Non-constant-time add-or-double.
      */
-    __device__ void add(const jacobian_t& p2)
-    {
-        jacobian_t p1 = *this;
-        jacobian_t p3;
+    // __device__ void add(const jacobian_t& p2)
+    // {
+    //     jacobian_t p1 = *this;
+    //     jacobian_t p3;
 
-        if (p2.is_inf()) {
-            return;
-        } else if (p1.is_inf()) {
-            p3 = p2;
-        } else {
-            field_t Z1Z1, Z2Z2, U1, S1, H;
+    //     if (p2.is_inf()) {
+    //         return;
+    //     } else if (p1.is_inf()) {
+    //         p3 = p2;
+    //     } else {
+    //         field_t Z1Z1, Z2Z2, U1, S1, H;
 
-            Z1Z1 = p1.Z^2;          /* Z1Z1 = Z1^2 */
-            p3.Z = Z1Z1 * p1.Z;     /* Z1*Z1Z1 */
-            p3.Z *= p2.Y;           /* S2 = Y2*Z1*Z1Z1 */
+    //         Z1Z1 = p1.Z^2;          /* Z1Z1 = Z1^2 */
+    //         p3.Z = Z1Z1 * p1.Z;     /* Z1*Z1Z1 */
+    //         p3.Z *= p2.Y;           /* S2 = Y2*Z1*Z1Z1 */
 
-            Z2Z2 = p2.Z^2;          /* Z2Z2 = Z2^2 */
-            S1 = Z2Z2 * p2.Z;       /* Z2*Z2Z2 */
-            S1 *= p1.Y;             /* S1 = Y1*Z2*Z2Z2 */
-            p3.Z -= S1;             /* S2-S1 */
+    //         Z2Z2 = p2.Z^2;          /* Z2Z2 = Z2^2 */
+    //         S1 = Z2Z2 * p2.Z;       /* Z2*Z2Z2 */
+    //         S1 *= p1.Y;             /* S1 = Y1*Z2*Z2Z2 */
+    //         p3.Z -= S1;             /* S2-S1 */
 
-            U1 = p1.X * Z2Z2;       /* U1 = X1*Z2Z2 */
-            H = p2.X * Z1Z1;        /* U2 = X2*Z1Z1 */
-            H -= U1;                /* H = U2-U1 */
+    //         U1 = p1.X * Z2Z2;       /* U1 = X1*Z2Z2 */
+    //         H = p2.X * Z1Z1;        /* U2 = X2*Z1Z1 */
+    //         H -= U1;                /* H = U2-U1 */
 
-            if ((int)H.is_zero() & (int)p3.Z.is_zero()) {
-                field_t A, B, C;    /* double |p1| */
+    //         if ((int)H.is_zero() & (int)p3.Z.is_zero()) {
+    //             field_t A, B, C;    /* double |p1| */
 
-                A = p1.X^2;         /* A = X1^2 */
-                B = p1.Y^2;         /* B = Y1^2 */
-                C = B^2;            /* C = B^2 */
+    //             A = p1.X^2;         /* A = X1^2 */
+    //             B = p1.Y^2;         /* B = Y1^2 */
+    //             C = B^2;            /* C = B^2 */
 
-                B += p1.X;          /* X1+B */
-                B *= B;             /* (X1+B)^2 */
-                B -= A;             /* (X1+B)^2-A */
-                B -= C;             /* (X1+B)^2-A-C */
-                B += B;             /* D = 2*((X1+B)^2-A-C) */
+    //             B += p1.X;          /* X1+B */
+    //             B *= B;             /* (X1+B)^2 */
+    //             B -= A;             /* (X1+B)^2-A */
+    //             B -= C;             /* (X1+B)^2-A-C */
+    //             B += B;             /* D = 2*((X1+B)^2-A-C) */
 
-                A += A<<1;          /* E = 3*A */
+    //             A += A<<1;          /* E = 3*A */
 
-                p3.X = A^2;         /* F = E^2 */
-                p3.X -= B;
-                p3.X -= B;          /* X3 = F-2*D */
+    //             p3.X = A^2;         /* F = E^2 */
+    //             p3.X -= B;
+    //             p3.X -= B;          /* X3 = F-2*D */
 
-                p3.Z = p1.Z * p1.Y; /* Z1*Y1 */
-                p3.Z <<= 1;         /* Z3 = 2*Z1*Y1 */
+    //             p3.Z = p1.Z * p1.Y; /* Z1*Y1 */
+    //             p3.Z <<= 1;         /* Z3 = 2*Z1*Y1 */
 
-                C <<= 3;            /* 8*C */
-                p3.Y = B - p3.X;    /* D-X3 */
-                p3.Y *= A;          /* E*(D-X3) */
-                p3.Y -= C;          /* Y3 = E*(D-X3)-8*C */
-            } else {
-                field_t I, J;       /* add |p1| and |p2| */
+    //             C <<= 3;            /* 8*C */
+    //             p3.Y = B - p3.X;    /* D-X3 */
+    //             p3.Y *= A;          /* E*(D-X3) */
+    //             p3.Y -= C;          /* Y3 = E*(D-X3)-8*C */
+    //         } else {
+    //             field_t I, J;       /* add |p1| and |p2| */
 
-                I = H + H;          /* 2*H */
-                I ^= 2;             /* I = (2*H)^2 */
+    //             I = H + H;          /* 2*H */
+    //             I ^= 2;             /* I = (2*H)^2 */
 
-                J = H * I;          /* J = H*I */
-                S1 *= J;            /* S1*J */
+    //             J = H * I;          /* J = H*I */
+    //             S1 *= J;            /* S1*J */
 
-                p3.Y = U1 * I;      /* V = U1*I */
+    //             p3.Y = U1 * I;      /* V = U1*I */
 
-                p3.Z += p3.Z;       /* r = 2*(S2-S1) */
-                p3.X = p3.Z^2;      /* r^2 */
-                p3.X -= J;          /* r^2-J */
-                p3.X -= p3.Y;
-                p3.X -= p3.Y;       /* X3 = r^2-J-2*V */
+    //             p3.Z += p3.Z;       /* r = 2*(S2-S1) */
+    //             p3.X = p3.Z^2;      /* r^2 */
+    //             p3.X -= J;          /* r^2-J */
+    //             p3.X -= p3.Y;
+    //             p3.X -= p3.Y;       /* X3 = r^2-J-2*V */
 
-                p3.Y -= p3.X;       /* V-X3 */
-                p3.Y *= p3.Z;       /* r*(V-X3) */
-                p3.Y -= S1;
-                p3.Y -= S1;         /* Y3 = r*(V-X3)-2*S1*J */
+    //             p3.Y -= p3.X;       /* V-X3 */
+    //             p3.Y *= p3.Z;       /* r*(V-X3) */
+    //             p3.Y -= S1;
+    //             p3.Y -= S1;         /* Y3 = r*(V-X3)-2*S1*J */
 
-                p3.Z = p1.Z + p2.Z; /* Z1+Z2 */
-                p3.Z ^= 2;          /* (Z1+Z2)^2 */
-                p3.Z -= Z1Z1;       /* (Z1+Z2)^2-Z1Z1 */
-                p3.Z -= Z2Z2;       /* (Z1+Z2)^2-Z1Z1-Z2Z2 */
-                p3.Z *= H;          /* Z3 = ((Z1+Z2)^2-Z1Z1-Z2Z2)*H */
-            }
-        }
-        *this = p3;
-    }
+    //             p3.Z = p1.Z + p2.Z; /* Z1+Z2 */
+    //             p3.Z ^= 2;          /* (Z1+Z2)^2 */
+    //             p3.Z -= Z1Z1;       /* (Z1+Z2)^2-Z1Z1 */
+    //             p3.Z -= Z2Z2;       /* (Z1+Z2)^2-Z1Z1-Z2Z2 */
+    //             p3.Z *= H;          /* Z3 = ((Z1+Z2)^2-Z1Z1-Z2Z2)*H */
+    //         }
+    //     }
+    //     *this = p3;
+    // }
 
-    __device__ void add(const affine_t& p2)
+    __device__ void add(const jacobian_t& p2)    //(const affine_t& p2)
     {
         jacobian_t p1 = *this;
         jacobian_t p3;

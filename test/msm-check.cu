@@ -11,12 +11,19 @@
 #include "alt_bn128_init.cuh"
 
 const size_t n = 1 << 20;
-const size_t win_siz = 12;
+
+const size_t win_siz = 11;
 const size_t win_cnt = (256 + win_siz - 1) / win_siz;
 const size_t bucket_cnt = 1 << win_siz;
 
 int main(int argc, char *argv[])
 {
+    // cudaDeviceProp prop;
+    // cudaGetDeviceProperties(&prop, 0);
+    // std::cout << "Device name: " << prop.name << std::endl;
+    // std::cout << "Max threads per block: " << prop.maxThreadsPerBlock << std::endl;
+    // std::cout << "Streaming Multiprocessors (SMs): " << prop.multiProcessorCount << std::endl;
+
     Timer timer;
 
     libff::init_alt_bn128_params();
@@ -42,6 +49,7 @@ int main(int argc, char *argv[])
     // }
     (pre_comp_g1<alt_bn128::g1_t>)<<<160, 1024>>>(n, (alt_bn128::g1_t*)dev_points.p(), win_siz, win_cnt);
     CUDA_DEBUG;
+    
     timer.stop();
 
     
