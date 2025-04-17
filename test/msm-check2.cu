@@ -9,7 +9,7 @@
 #include "alt_bn128_init.cuh"
 
 const size_t n = 1 << 18;
-const size_t win_siz = 12;
+const size_t win_siz = log2(n + n / 2) - 9;
 const size_t win_cnt = (256 + win_siz - 1) / win_siz;
 const size_t bucket_cnt = 1 << win_siz;
 

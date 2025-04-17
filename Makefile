@@ -37,7 +37,7 @@ $(BIN_DIR)/%: $(TEST_DIR)/%.cu $(OBJ_FILES)
 	$(NVCC) $(CPPFLAGS) $(CXXFLAGS) $(XCOMPILER_FLAGS) $(LDFLAGS) $< $(OBJ_FILES) -o $@
 
 # Default program
-PROG ?= msm-check
+PROG ?= msm-check2
 
 # Run a specific test program
 run: $(BIN_DIR)/$(PROG)

@@ -1,5 +1,6 @@
 #pragma once
-
+#include <thrust/device_vector.h>
+#include <thrust/scan.h>
 #include "device-utils.cuh"
 #include "alt_bn128_t.cuh"
 template <typename devFdT, typename dG1>
@@ -160,22 +161,36 @@ __global__ __launch_bounds__(1024, 1) void bucket_accumulation_g1(
     
 }
 template<typename dG2> 
-__global__ __launch_bounds__(1024, 2) void bucket_accumulation_g2(
+__global__ __launch_bounds__(1024, 1) void bucket_accumulation_g2(
     dG2 *points, uint32_t *point_idx, 
-    uint32_t *bucket_siz, uint32_t *bucket_top, dG2 *bucket_sum)
+    uint32_t *bucket_siz, uint32_t *bucket_top, dG2 *bucket_sum, uint32_t len)
 {
-    size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) % 32, bucket_id = (threadIdx.x + blockIdx.x * blockDim.x) / 32;
-    size_t bucket_tail = bucket_top[bucket_id];
+    size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) / 2;
+    
+    dG2 acc; 
+    
 
-    dG2 acc, incr; acc.zero();
-    for (size_t i = bucket_tail - bucket_siz[bucket_id] + (tid/2); i < bucket_tail; i += 16) acc.add(points[2 * point_idx[i] + (threadIdx.x & 1)]);
-    for (size_t offset = 16; offset > 1; offset >>= 1) {
-        for (uint32_t j = 0; j < sizeof(dG2) / sizeof(uint32_t); j++) 
-            ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
-        acc.dadd(incr);
+    for(uint32_t i = tid; i < len; i += (blockDim.x * gridDim.x) / 2) {
+        acc.zero();
+        for (size_t j = bucket_top[i] - bucket_siz[i]; j < bucket_top[i]; j++) acc.add(points[2 * point_idx[j] + (threadIdx.x & 1)]);
+
+        bucket_sum[2 * i + (threadIdx.x & 1)] = acc;
     }
 
-    if (tid <= 1) bucket_sum[2 * bucket_id + (threadIdx.x & 1)] = acc;
+
+
+    // size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) % 32, bucket_id = (threadIdx.x + blockIdx.x * blockDim.x) / 32;
+    // size_t bucket_tail = bucket_top[bucket_id];
+
+    // dG2 acc, incr; acc.zero();
+    // for (size_t i = bucket_tail - bucket_siz[bucket_id] + (tid/2); i < bucket_tail; i += 16) acc.add(points[2 * point_idx[i] + (threadIdx.x & 1)]);
+    // for (size_t offset = 16; offset > 1; offset >>= 1) {
+    //     for (uint32_t j = 0; j < sizeof(dG2) / sizeof(uint32_t); j++) 
+    //         ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
+    //     acc.dadd(incr);
+    // }
+
+    // if (tid <= 1) bucket_sum[2 * bucket_id + (threadIdx.x & 1)] = acc;
 }
 template<typename dG1> 
 __global__ __launch_bounds__(1024, 1) void bucket_scale_g1(dG1 *buckets_sum, size_t bucket_cnt, uint32_t len, uint32_t lsbits)
@@ -201,48 +216,94 @@ __global__ __launch_bounds__(1024, 1) void bucket_scale_g1(dG1 *buckets_sum, siz
 
 }
 template<typename dG2> 
-__global__ __launch_bounds__(64, 1) void bucket_scale_g2(dG2 *buckets_sum, size_t bucket_cnt)
+__global__ __launch_bounds__(1024, 1) void bucket_scale_g2(dG2 *buckets_sum, size_t bucket_cnt, uint32_t len, uint32_t lsbits)
 {
+
     size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) / 2, stride = (blockDim.x * gridDim.x) / 2;
-    for (size_t i = tid; i < bucket_cnt; i += stride) {
-        dG2 acc, incr = buckets_sum[2 * i + (threadIdx.x & 1)]; acc.zero();
+    for (size_t i = tid; i < len; i += stride) {
+        dG2 acc, incr = buckets_sum[i * 2 + (threadIdx.x & 1)]; acc.zero();
+
+        size_t temp;
+        temp = (i + bucket_cnt) < len ? (i % bucket_cnt) : ((i % bucket_cnt) >> lsbits);
+        
         for (size_t j = bucket_cnt / 2; j > 0; j >>= 1) {
             acc.dbl();
-            if (i & j) acc.dadd(incr);
+            
+            if (temp & j) acc.dadd(incr);
         }
         buckets_sum[2 * i + (threadIdx.x & 1)] = acc;
     }
+
+
+    // size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) / 2, stride = (blockDim.x * gridDim.x) / 2;
+    // for (size_t i = tid; i < bucket_cnt; i += stride) {
+    //     dG2 acc, incr = buckets_sum[2 * i + (threadIdx.x & 1)]; acc.zero();
+    //     for (size_t j = bucket_cnt / 2; j > 0; j >>= 1) {
+    //         acc.dbl();
+    //         if (i & j) acc.dadd(incr);
+    //     }
+    //     buckets_sum[2 * i + (threadIdx.x & 1)] = acc;
+    // }
 }
 
 template<typename dG1> 
-__global__ __launch_bounds__(32, 1) void bucket_reduce_g1(dG1 *buckets_sum, uint32_t len, dG1 *dest)
+__global__ __launch_bounds__(512, 1) void bucket_reduce_g1(dG1 *buckets_sum, uint32_t len, dG1 *dest)
 { 
     size_t tid = threadIdx.x;
-
+    extern __shared__ dG1 sdata[];
     dG1 acc, incr; acc.zero();
-    for (size_t i = tid; i < len; i += 32) acc.dadd(buckets_sum[i]);
-    for (size_t offset = 16; offset > 0; offset >>= 1) {
-        for (size_t j = 0; j < sizeof(dG1) / sizeof(uint32_t); j++) 
-            ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
-        acc.dadd(incr);
-    }
+    for (size_t i = tid; i < len; i += 512) acc.dadd(buckets_sum[i]);
+    sdata[tid] = acc;
 
-    if (tid == 0) *dest = acc;
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride)
+            sdata[tid].dadd(sdata[tid + stride]);
+        __syncthreads();
+    }
+    
+    if (tid == 0) *dest = sdata[0];
+
+    // size_t tid = threadIdx.x;
+    
+    // dG1 acc, incr; acc.zero();
+    // for (size_t i = tid; i < len; i += 32) acc.dadd(buckets_sum[i]);
+    // for (size_t offset = 16; offset > 0; offset >>= 1) {
+    //     for (size_t j = 0; j < sizeof(dG1) / sizeof(uint32_t); j++) 
+    //         ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
+    //     acc.dadd(incr);
+    // }
+
+    // if (tid == 0) *dest = acc;
 }
 template<typename dG2> 
-__global__ __launch_bounds__(32, 1) void bucket_reduce_g2(dG2 *buckets_sum, uint32_t bucket_cnt, dG2 *dest)
+__global__ __launch_bounds__(512, 1) void bucket_reduce_g2(dG2 *buckets_sum, uint32_t len, dG2 *dest)
 {
-    size_t tid = threadIdx.x;
-
+    size_t tid = threadIdx.x / 2;
+    extern __shared__ dG2 sdata[];
     dG2 acc, incr; acc.zero();
-    for (size_t i = tid; i < 2 * bucket_cnt; i += 32) acc.dadd(buckets_sum[i]);
-    for (size_t offset = 16; offset > 1; offset >>= 1) {
-        for (size_t j = 0; j < sizeof(dG2) / sizeof(uint32_t); j++) 
-            ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
-        acc.dadd(incr);
-    }
+    for (size_t i = tid; i < len; i += 256) acc.dadd(buckets_sum[2 * i + (threadIdx.x & 1)]);
+    sdata[2 * tid + (threadIdx.x & 1)] = acc;
 
-    if (tid <= 1) acc.write_to((void*)dest);
+    for (int stride = blockDim.x / 2; stride > 1; stride >>= 1) {
+        if (threadIdx.x < stride)
+            sdata[threadIdx.x].dadd(sdata[threadIdx.x + stride]);
+        __syncthreads();
+    }
+    
+    if (tid <= 0) sdata[threadIdx.x].write_to((void*)dest);
+
+
+    // size_t tid = threadIdx.x;
+
+    // dG2 acc, incr; acc.zero();
+    // for (size_t i = tid; i < 2 * len; i += 32) acc.dadd(buckets_sum[i]);
+    // for (size_t offset = 16; offset > 1; offset >>= 1) {
+    //     for (size_t j = 0; j < sizeof(dG2) / sizeof(uint32_t); j++) 
+    //         ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
+    //     acc.dadd(incr);
+    // }
+
+    // if (tid <= 1) acc.write_to((void*)dest);
 }
 
 template<typename devFdT, typename dG1>
@@ -260,13 +321,26 @@ void multi_scalar_multiplication_g1(
     xpu::vector<dG1> bucket_sum(bucket_cnt * win_cnt, xpu::mem_policy::device_only);
     //printf("%u bytes\n", sizeof(points[0]));
     bucket_siz.clear();
+
     timer.start();
     (bucket_scatter_count<devFdT>)<<<14, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt, bucket_cnt);
-    bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt, win_cnt);
+    cudaDeviceSynchronize();
+    timer.stop("bucket_scatter_count");
+    timer.start();
+
+    thrust::exclusive_scan(
+        thrust::device_pointer_cast((uint32_t*)bucket_siz.p()),
+        thrust::device_pointer_cast((uint32_t*)bucket_siz.p() + bucket_cnt * win_cnt),
+        thrust::device_pointer_cast((uint32_t*)bucket_top.p())
+    );
+    //bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt, win_cnt);
+    cudaDeviceSynchronize();
+    timer.stop("bucket_prefixsum");
+    timer.start();
     (bucket_scatter_calidx<devFdT>)<<<14, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride, bucket_cnt);
     CUDA_DEBUG;
     cudaDeviceSynchronize();
-    timer.stop("bucket_scatter");
+    timer.stop("bucket_scatter_calcidx");
 
 
     timer.start();
@@ -282,7 +356,10 @@ void multi_scalar_multiplication_g1(
     //printf("lsbits: %u\n", lsbits);
 
     (bucket_scale_g1<dG1>)<<<14, 1024>>>((dG1*)bucket_sum.p(), bucket_cnt, win_cnt * bucket_cnt, lsbits);
-    (bucket_reduce_g1<dG1>)<<<1, 32>>>((dG1*)bucket_sum.p(), bucket_cnt * win_cnt, dest);
+
+    
+
+    (bucket_reduce_g1<dG1>)<<<1, 512, sizeof(dG1) * 512>>>((dG1*)bucket_sum.p(), bucket_cnt * win_cnt, dest);
     CUDA_DEBUG;
     cudaDeviceSynchronize();
     timer.stop("bucket_reduce");
@@ -294,18 +371,43 @@ void multi_scalar_multiplication_g2(
     size_t win_siz, size_t win_cnt, size_t bucket_cnt, 
     size_t level_stride)
 {
-    xpu::vector<uint32_t> bucket_siz(bucket_cnt, xpu::mem_policy::device_only),
-                          bucket_top(bucket_cnt, xpu::mem_policy::device_only),
+    Timer timer;
+    xpu::vector<uint32_t> bucket_siz(bucket_cnt * win_cnt, xpu::mem_policy::device_only),
+                          bucket_top(bucket_cnt * win_cnt, xpu::mem_policy::device_only),
                           point_idx(length * win_cnt, xpu::mem_policy::device_only);
-    xpu::vector<dG2> bucket_sum(2 * bucket_cnt, xpu::mem_policy::device_only);
+    xpu::vector<dG2> bucket_sum(2 * bucket_cnt * win_cnt, xpu::mem_policy::device_only);
 
     bucket_siz.clear();
-    (bucket_scatter_count<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
-    bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt, win_cnt);
-    (bucket_scatter_calidx<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
-    (bucket_accumulation_g2<dG2>)<<<128, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG2*)bucket_sum.p());
-    (bucket_scale_g2<dG2>)<<<64, 64>>>((dG2*)bucket_sum.p(), bucket_cnt);
-    (bucket_reduce_g2<dG2>)<<<1, 32>>>((dG2*)bucket_sum.p(), bucket_cnt, dest);
+
+    timer.start();
+    (bucket_scatter_count<devFdT>)<<<14, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt, bucket_cnt);
+    thrust::exclusive_scan(
+        thrust::device_pointer_cast((uint32_t*)bucket_siz.p()),
+        thrust::device_pointer_cast((uint32_t*)bucket_siz.p() + bucket_cnt * win_cnt),
+        thrust::device_pointer_cast((uint32_t*)bucket_top.p())
+    );
+    //bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt, win_cnt);
+    (bucket_scatter_calidx<devFdT>)<<<14, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride, bucket_cnt);
+    CUDA_DEBUG;
+    cudaDeviceSynchronize();
+    timer.stop("bucket_sccater");
+
+
+    timer.start();
+    (bucket_accumulation_g2<dG2>)<<<14, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG2*)bucket_sum.p(), bucket_cnt * win_cnt);
+    CUDA_DEBUG;
+    cudaDeviceSynchronize();
+    timer.stop("bucket_accumulate");
+
+
+    timer.start();
+    uint32_t lsbits = win_siz - ((sizeof(devFdT) * 8) % win_siz);
+    (bucket_scale_g2<dG2>)<<<14, 1024>>>((dG2*)bucket_sum.p(), bucket_cnt, bucket_cnt * win_cnt, lsbits);
+    (bucket_reduce_g2<dG2>)<<<1, 512, sizeof(dG2) * 512>>>((dG2*)bucket_sum.p(), bucket_cnt * win_cnt, dest);
+    CUDA_DEBUG;
+    cudaDeviceSynchronize();
+    timer.stop("bucket_reduce");
+
 }
 
 
