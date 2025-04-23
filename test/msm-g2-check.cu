@@ -26,12 +26,16 @@ int main(int argc, char *argv[])
     xpu::vector<libff::alt_bn128_G2> dev_points(win_cnt * n, xpu::mem_policy::device_only);
     xpu::vector<libff::alt_bn128_Fr> dev_scalars(n, xpu::mem_policy::cross_platform);
 
+    xpu::vector<libff::alt_bn128_G2> dev_uni(1, xpu::mem_policy::cross_platform);
+    dev_uni[0] = libff::alt_bn128_G2::one();
+    dev_uni.store();
+
     timer.start();
     #pragma omp parallel for
     for (size_t i = 0; i < n; i++) dev_scalars[i] = libff::alt_bn128_Fr::random_element();
     dev_scalars.store();
 
-    (fix_base_multi_scalar_multiplication_g2<alt_bn128::fr_t, alt_bn128::g2_t>)<<<324, 510>>>((alt_bn128::g2_t*)dev_points.p(), (alt_bn128::fr_t*)dev_scalars.p(), n);
+    (fix_base_multi_scalar_multiplication_g2<alt_bn128::fr_t, alt_bn128::g2_t>)<<<324, 510>>>((alt_bn128::g2_t*)dev_points.p(), (alt_bn128::fr_t*)dev_scalars.p(), n, (alt_bn128::g2_t*)dev_uni.p());
     (pre_comp_g2<alt_bn128::g2_t>)<<<216, 1024>>>(n, (alt_bn128::g2_t*)dev_points.p(), win_siz, win_cnt);
     CUDA_DEBUG;
     timer.stop();

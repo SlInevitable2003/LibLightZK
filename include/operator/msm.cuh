@@ -24,13 +24,13 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
 }
 
 template <typename devFdT, typename dG2>
-__global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g2(dG2 *dest, devFdT *scalars, const size_t length)
+__global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g2(dG2 *dest, devFdT *scalars, const size_t length, dG2 *uni_raw)
 {
     size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) / 2, stride = gridDim.x * blockDim.x / 2;
 
     __shared__ dG2 shmem[510];
-    __shared__ dG2 uni[2];
-    if (threadIdx.x <= 1) uni[threadIdx.x].one();
+    __shared__ dG2 uni;
+    if (threadIdx.x == 0) uni.read_from(uni_raw);
     __syncthreads();
 
     for (size_t i = tid; i < length; i += stride) {
@@ -39,7 +39,7 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
         uint32_t *p = (uint32_t *)(scalars + i);
         for (size_t j = 8 * sizeof(devFdT); j > 0; j--) {
             shmem[threadIdx.x].dbl();
-            if ((p[(j - 1) / 32] >> ((j - 1) % 32)) & 1) shmem[threadIdx.x].dadd(uni[threadIdx.x & 1]);
+            if ((p[(j - 1) / 32] >> ((j - 1) % 32)) & 1) shmem[threadIdx.x].dadd(dest[2 * i + (threadIdx.x & 1)]);
         }
         dest[2 * i + (threadIdx.x & 1)] = shmem[threadIdx.x];
     }
@@ -68,8 +68,8 @@ __global__ __launch_bounds__(1024, 2) void pre_comp_g2(size_t length, dG2 *point
         dG2 cur = points[i];
         for (size_t j = 1; j < level; j++) {
             for (size_t k = 0; k < gap; k++) cur.dbl();
-            points[i + j * length] = cur;
-            points[i + j * length].to_affine();
+            points[i + 2 * j * length] = cur;
+            points[i + 2 * j * length].to_affine();
         }
     }
 }

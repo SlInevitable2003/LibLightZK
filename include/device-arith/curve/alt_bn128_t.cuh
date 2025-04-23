@@ -244,10 +244,10 @@ namespace alt_bn128 {
             ((fp_t*)this)[1] = fp_mont::csel(fp_t::one() << 1, fp_t::one(1), (threadIdx.x & 1) == 0); 
         }
 
-        __device__ __forceinline__ void read_from(const fp_t *src) {
-            ((fp_t*)this)[0] = src[0 + (threadIdx.x & 1)];
-            ((fp_t*)this)[1] = src[2 + (threadIdx.x & 1)];
-            ((fp_t*)this)[2] = src[4 + (threadIdx.x & 1)];
+        __device__ __forceinline__ void read_from(const void *src) {
+            ((fp_t*)this)[0] = ((fp_t*)src)[0 + (threadIdx.x & 1)];
+            ((fp_t*)this)[1] = ((fp_t*)src)[2 + (threadIdx.x & 1)];
+            ((fp_t*)this)[2] = ((fp_t*)src)[4 + (threadIdx.x & 1)];
         }
         __device__ __forceinline__ void write_to(void *dest) {
             ((fp_t*)dest)[0 + (threadIdx.x & 1)] = ((fp_t*)this)[0];

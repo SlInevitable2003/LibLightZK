@@ -37,7 +37,7 @@ $(BIN_DIR)/%: $(TEST_DIR)/%.cu $(OBJ_FILES)
 	$(NVCC) $(CPPFLAGS) $(CXXFLAGS) $(XCOMPILER_FLAGS) $(LDFLAGS) $< $(OBJ_FILES) -o $@
 
 # Default program
-PROG ?= multi-gpu
+PROG ?= msm-g2-check
 
 # Run a specific test program
 run: $(BIN_DIR)/$(PROG)
