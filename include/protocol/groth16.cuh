@@ -94,7 +94,6 @@ public:
         #pragma omp parallel for
         for (size_t i = 0; i < N + 1; i++) ss[i] = FieldT::random_element();
         ss.store();
-        #pragma omp parallel for
         (fix_base_multi_scalar_multiplication_g1<devFdT, dG1>)<<<324, 510>>>((dG1*)a1.p(), (devFdT*)ss.p(), N + 1);
         
         b1.allocate(pc.win_cnt * (N + 1), xpu::mem_policy::device_only);
@@ -119,7 +118,8 @@ public:
         #pragma omp parallel for
         for (size_t i = 0; i < N + 1; i++) ss[i] = FieldT::random_element();
         ss.store();
-        (fix_base_multi_scalar_multiplication_g2<devFdT, dG2>)<<<324, 510>>>((dG2*)b2.p(), (devFdT*)ss.p(), N + 1);
+        xpu::vector<G2T> dev_uni(1, xpu::mem_policy::cross_platform); dev_uni[0] = G2T::one(); dev_uni.store();
+        (fix_base_multi_scalar_multiplication_g2<devFdT, dG2>)<<<324, 510>>>((dG2*)b2.p(), (devFdT*)ss.p(), N + 1, (dG2*)dev_uni.p());
 
         CUDA_DEBUG;
         timer.stop("Proving Key Setup");
