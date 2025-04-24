@@ -219,9 +219,9 @@ void multi_scalar_multiplication_g1(
     xpu::vector<dG1> bucket_sum(bucket_cnt, xpu::mem_policy::device_only);
 
     bucket_siz.clear();
-    (bucket_scatter_count<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
+    (bucket_scatter_count<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
     bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt);
-    (bucket_scatter_calidx<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
+    (bucket_scatter_calidx<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
     (bucket_accumulation_g1<dG1>)<<<128, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG1*)bucket_sum.p());
     (bucket_scale_g1<dG1>)<<<64, 64>>>((dG1*)bucket_sum.p(), bucket_cnt);
     (bucket_reduce_g1<dG1>)<<<1, 32>>>((dG1*)bucket_sum.p(), bucket_cnt, dest);
@@ -239,9 +239,9 @@ void multi_scalar_multiplication_g2(
     xpu::vector<dG2> bucket_sum(2 * bucket_cnt, xpu::mem_policy::device_only);
 
     bucket_siz.clear();
-    (bucket_scatter_count<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
+    (bucket_scatter_count<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
     bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt);
-    (bucket_scatter_calidx<devFdT>)<<<160, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
+    (bucket_scatter_calidx<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
     (bucket_accumulation_g2<dG2>)<<<128, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG2*)bucket_sum.p());
     (bucket_scale_g2<dG2>)<<<64, 64>>>((dG2*)bucket_sum.p(), bucket_cnt);
     (bucket_reduce_g2<dG2>)<<<1, 32>>>((dG2*)bucket_sum.p(), bucket_cnt, dest);
