@@ -24,13 +24,13 @@ __device__ uint32_t extract_bits(const uint32_t* big_int, const size_t total_bit
     return (combined >> start_bit) & mask;
 }
 
-__device__ void lock(int *mutex) {
-    while (atomicCAS(mutex, 0, 1) != 0);
-}
+struct Mutex {
+    int lock; // 0: unlocked, 1: locked
+};
 
-__device__ void unlock(int *mutex) {
-    atomicExch(mutex, 0);
-}
+__device__ void initMutex(Mutex* mutex) { mutex->lock = 0; }
+__device__ void lockMutex(Mutex* mutex) { while (atomicCAS(&(mutex->lock), 0, 1) != 0); }
+__device__ void unlockMutex(Mutex* mutex) { atomicExch(&(mutex->lock), 0); }
 
 #include <vector>
 #include <cuda_runtime.h>

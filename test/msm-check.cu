@@ -7,7 +7,7 @@
 #include "omp.h"
 
 const size_t n = 1 << 20;
-const size_t win_siz = 12;
+const size_t win_siz = 8;
 const size_t win_cnt = (256 + win_siz - 1) / win_siz;
 const size_t bucket_cnt = 1 << win_siz;
 

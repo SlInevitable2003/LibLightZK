@@ -113,41 +113,77 @@ __global__ __launch_bounds__(1024, 2) void bucket_scatter_calidx(
         }
     }
 }
-template<typename dG1> 
-__global__ __launch_bounds__(1024, 2) void bucket_accumulation_g1(
-    dG1 *points, uint32_t *point_idx, 
-    uint32_t *bucket_siz, uint32_t *bucket_top, dG1 *bucket_sum)
+template<typename dG1>
+__global__ __launch_bounds__(1024, 2) void bucket_accumulation_g1_prepare(dG1 *bucket_sum, size_t bucket_cnt, Mutex *mutexs)
 {
-    size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) % 32, bucket_id = (threadIdx.x + blockIdx.x * blockDim.x) / 32;
-    size_t bucket_tail = bucket_top[bucket_id];
+    size_t tid = threadIdx.x + blockIdx.x * blockDim.x, stride = blockDim.x * gridDim.x;
+    for (size_t i = tid; i < bucket_cnt; i += stride) {
+        bucket_sum[i].zero();
+        initMutex(mutexs + i);
+    }
+}
+template<typename dG1> 
+__global__ __launch_bounds__(512, 2) void bucket_accumulation_g1(
+    dG1 *points, uint32_t *point_idx, 
+    uint32_t *bucket_siz, uint32_t *bucket_top, dG1 *bucket_sum,
+    size_t bucket_cnt, size_t warp_per_bucket, Mutex *mutexs)
+{
+    size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) % 32;
+    size_t warp_id = (threadIdx.x + blockIdx.x * blockDim.x) / 32;
+    size_t bucket_id = warp_id % bucket_cnt, bucket_off = warp_id / bucket_cnt;
+    size_t bucket_siz_per_warp = (bucket_siz[bucket_id] + warp_per_bucket - 1) / warp_per_bucket;
+    size_t bucket_head = bucket_top[bucket_id] - bucket_siz[bucket_id] + bucket_siz_per_warp * bucket_off;
+    size_t bucket_tail = ((bucket_head + bucket_siz_per_warp) < bucket_top[bucket_id]) ? (bucket_head + bucket_siz_per_warp) : bucket_top[bucket_id];
 
     dG1 acc, incr; acc.zero();
-    for (size_t i = bucket_tail - bucket_siz[bucket_id] + tid; i < bucket_tail; i += 32) acc.aadd(points[point_idx[i]]);
+    for (size_t i = bucket_head + tid; i < bucket_tail; i += 32) acc.aadd(points[point_idx[i]]);
     for (size_t offset = 16; offset > 0; offset >>= 1) {
         for (uint32_t j = 0; j < sizeof(dG1) / sizeof(uint32_t); j++) 
             ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
         acc.dadd(incr);
     }
 
-    if (tid == 0) bucket_sum[bucket_id] = acc;
+    if (tid == 0) {
+        lockMutex(mutexs + bucket_id);
+        bucket_sum[bucket_id].dadd(acc);
+        unlockMutex(mutexs + bucket_id);
+    }
+}
+template<typename dG2>
+__global__ __launch_bounds__(1024, 2) void bucket_accumulation_g2_prepare(dG2 *bucket_sum, size_t bucket_cnt, Mutex *mutexs)
+{
+    size_t tid = threadIdx.x + blockIdx.x * blockDim.x, stride = blockDim.x * gridDim.x;
+    for (size_t i = tid; i < 2 * bucket_cnt; i += stride) {
+        bucket_sum[i].zero();
+        initMutex(mutexs + i);
+    }
 }
 template<typename dG2> 
-__global__ __launch_bounds__(1024, 2) void bucket_accumulation_g2(
+__global__ __launch_bounds__(512, 2) void bucket_accumulation_g2(
     dG2 *points, uint32_t *point_idx, 
-    uint32_t *bucket_siz, uint32_t *bucket_top, dG2 *bucket_sum)
+    uint32_t *bucket_siz, uint32_t *bucket_top, dG2 *bucket_sum,
+    size_t bucket_cnt, size_t warp_per_bucket, Mutex *mutexs)
 {
-    size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) % 32, bucket_id = (threadIdx.x + blockIdx.x * blockDim.x) / 32;
-    size_t bucket_tail = bucket_top[bucket_id];
+    size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) % 32;
+    size_t warp_id = (threadIdx.x + blockIdx.x * blockDim.x) / 32;
+    size_t bucket_id = warp_id % bucket_cnt, bucket_off = warp_id / bucket_cnt;
+    size_t bucket_siz_per_warp = (bucket_siz[bucket_id] + warp_per_bucket - 1) / warp_per_bucket;
+    size_t bucket_head = bucket_top[bucket_id] - bucket_siz[bucket_id] + bucket_siz_per_warp * bucket_off;
+    size_t bucket_tail = ((bucket_head + bucket_siz_per_warp) < bucket_top[bucket_id]) ? (bucket_head + bucket_siz_per_warp) : bucket_top[bucket_id];
 
     dG2 acc, incr; acc.zero();
-    for (size_t i = bucket_tail - bucket_siz[bucket_id] + (tid/2); i < bucket_tail; i += 16) acc.aadd(points[2 * point_idx[i] + (threadIdx.x & 1)]);
+    for (size_t i = bucket_head + (tid/2); i < bucket_tail; i += 16) acc.aadd(points[2 * point_idx[i] + (threadIdx.x & 1)]);
     for (size_t offset = 16; offset > 1; offset >>= 1) {
         for (uint32_t j = 0; j < sizeof(dG2) / sizeof(uint32_t); j++) 
             ((uint32_t*)&incr)[j] = __shfl_down_sync(0xffffffff, ((uint32_t*)&acc)[j], offset);
         acc.dadd(incr);
     }
 
-    if (tid <= 1) bucket_sum[2 * bucket_id + (threadIdx.x & 1)] = acc;
+    if (tid <= 1) {
+        lockMutex(mutexs + 2 * bucket_id + (threadIdx.x & 1));
+        bucket_sum[2 * bucket_id + (threadIdx.x & 1)].dadd(acc);
+        unlockMutex(mutexs + 2 * bucket_id + (threadIdx.x & 1));
+    }
 }
 template<typename dG1> 
 __global__ __launch_bounds__(64, 1) void bucket_scale_g1(dG1 *buckets_sum, size_t bucket_cnt)
@@ -213,16 +249,18 @@ void multi_scalar_multiplication_g1(
     size_t win_siz, size_t win_cnt, size_t bucket_cnt, 
     size_t level_stride)
 {
-    xpu::vector<uint32_t> bucket_siz(bucket_cnt, xpu::mem_policy::device_only),
+    xpu::vector<uint32_t> bucket_siz(bucket_cnt, xpu::mem_policy::cross_platform),
                           bucket_top(bucket_cnt, xpu::mem_policy::device_only),
                           point_idx(length * win_cnt, xpu::mem_policy::device_only);
     xpu::vector<dG1> bucket_sum(bucket_cnt, xpu::mem_policy::device_only);
+    xpu::vector<Mutex> mutexs(bucket_cnt, xpu::mem_policy::device_only);
 
     bucket_siz.clear();
     (bucket_scatter_count<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
     bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt);
     (bucket_scatter_calidx<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
-    (bucket_accumulation_g1<dG1>)<<<128, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG1*)bucket_sum.p());
+    (bucket_accumulation_g1_prepare<dG1>)<<<216, 1024>>>((dG1*)bucket_sum.p(), bucket_cnt, (Mutex*)mutexs.p());
+    (bucket_accumulation_g1<dG1>)<<<128, 512>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG1*)bucket_sum.p(), bucket_cnt, 8, (Mutex*)mutexs.p());
     (bucket_scale_g1<dG1>)<<<64, 64>>>((dG1*)bucket_sum.p(), bucket_cnt);
     (bucket_reduce_g1<dG1>)<<<1, 32>>>((dG1*)bucket_sum.p(), bucket_cnt, dest);
 }
@@ -237,12 +275,14 @@ void multi_scalar_multiplication_g2(
                           bucket_top(bucket_cnt, xpu::mem_policy::device_only),
                           point_idx(length * win_cnt, xpu::mem_policy::device_only);
     xpu::vector<dG2> bucket_sum(2 * bucket_cnt, xpu::mem_policy::device_only);
+    xpu::vector<Mutex> mutexs(2 * bucket_cnt, xpu::mem_policy::device_only);
 
     bucket_siz.clear();
     (bucket_scatter_count<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)bucket_siz.p(), win_siz, win_cnt);
     bucket_scatter_prefixsum<<<1, 1>>>((uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), bucket_cnt);
     (bucket_scatter_calidx<devFdT>)<<<216, 1024>>>(length, scalars, (uint32_t*)point_idx.p(), (uint32_t*)bucket_top.p(), win_siz, win_cnt, level_stride);
-    (bucket_accumulation_g2<dG2>)<<<128, 1024>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG2*)bucket_sum.p());
+    (bucket_accumulation_g1_prepare<dG2>)<<<216, 1024>>>((dG2*)bucket_sum.p(), bucket_cnt, (Mutex*)mutexs.p());
+    (bucket_accumulation_g2<dG2>)<<<128, 512>>>(points, (uint32_t*)point_idx.p(), (uint32_t*)bucket_siz.p(), (uint32_t*)bucket_top.p(), (dG2*)bucket_sum.p(), bucket_cnt, 8, (Mutex*)mutexs.p());
     (bucket_scale_g2<dG2>)<<<64, 64>>>((dG2*)bucket_sum.p(), bucket_cnt);
     (bucket_reduce_g2<dG2>)<<<1, 32>>>((dG2*)bucket_sum.p(), bucket_cnt, dest);
 }
