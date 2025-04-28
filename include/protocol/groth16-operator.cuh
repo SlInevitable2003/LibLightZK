@@ -33,3 +33,4 @@ void ntt_setup(size_t M, xpu::vector<FieldT>& ntt_params)
 
 #include "msm.cuh"
 #include "poly.cuh"
+#include "light-msm.cuh"

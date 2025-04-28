@@ -3,7 +3,7 @@
 #include "xpu-vector.cuh"
 
 template <typename devFdT, typename dG1>
-__global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g1(dG1 *dest, devFdT *scalars, const size_t length)
+__global__ __launch_bounds__(510, 1) void fix_base_multi_scalar_multiplication_g1(dG1 *dest, devFdT *scalars, const size_t length)
 {
     size_t tid = threadIdx.x + blockIdx.x * blockDim.x, stride = gridDim.x * blockDim.x;
 
@@ -19,18 +19,19 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
             shmem[threadIdx.x].dbl();
             if ((p[(j - 1) / 32] >> ((j - 1) % 32)) & 1) shmem[threadIdx.x].dadd(uni);
         }
+        shmem[threadIdx.x].to_affine();
         dest[i] = shmem[threadIdx.x];
     }
 }
 
 template <typename devFdT, typename dG2>
-__global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g2(dG2 *dest, devFdT *scalars, const size_t length, dG2 *uni_raw)
+__global__ __launch_bounds__(510, 1) void fix_base_multi_scalar_multiplication_g2(dG2 *dest, devFdT *scalars, const size_t length, dG2 *uni_raw)
 {
     size_t tid = (threadIdx.x + blockIdx.x * blockDim.x) / 2, stride = gridDim.x * blockDim.x / 2;
 
     __shared__ dG2 shmem[510];
     __shared__ dG2 uni;
-    if (threadIdx.x == 0) uni.read_from(uni_raw);
+    if (threadIdx.x <= 1) uni.read_from(uni_raw);
     __syncthreads();
 
     for (size_t i = tid; i < length; i += stride) {
@@ -41,6 +42,7 @@ __global__ __launch_bounds__(510, 3) void fix_base_multi_scalar_multiplication_g
             shmem[threadIdx.x].dbl();
             if ((p[(j - 1) / 32] >> ((j - 1) % 32)) & 1) shmem[threadIdx.x].dadd(dest[2 * i + (threadIdx.x & 1)]);
         }
+        shmem[threadIdx.x].to_affine();
         dest[2 * i + (threadIdx.x & 1)] = shmem[threadIdx.x];
     }
 }

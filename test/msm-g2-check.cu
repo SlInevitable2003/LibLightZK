@@ -7,7 +7,7 @@
 #include "omp.h"
 
 const size_t n = 1 << 20;
-const size_t win_siz = 12;
+const size_t win_siz = 8;
 const size_t win_cnt = (256 + win_siz - 1) / win_siz;
 const size_t bucket_cnt = 1 << win_siz;
 
@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 
     libff::init_alt_bn128_params();
 
-    xpu::vector<libff::alt_bn128_G2> dev_points(win_cnt * n, xpu::mem_policy::device_only);
+    xpu::vector<libff::alt_bn128_G2> dev_points(n, xpu::mem_policy::device_only), dev_res(1, xpu::mem_policy::cross_platform);
     xpu::vector<libff::alt_bn128_Fr> dev_scalars(n, xpu::mem_policy::cross_platform);
 
     xpu::vector<libff::alt_bn128_G2> dev_uni(1, xpu::mem_policy::cross_platform);
@@ -35,8 +35,7 @@ int main(int argc, char *argv[])
     for (size_t i = 0; i < n; i++) dev_scalars[i] = libff::alt_bn128_Fr::random_element();
     dev_scalars.store();
 
-    (fix_base_multi_scalar_multiplication_g2<alt_bn128::fr_t, alt_bn128::g2_t>)<<<324, 510>>>((alt_bn128::g2_t*)dev_points.p(), (alt_bn128::fr_t*)dev_scalars.p(), n, (alt_bn128::g2_t*)dev_uni.p());
-    (pre_comp_g2<alt_bn128::g2_t>)<<<216, 1024>>>(n, (alt_bn128::g2_t*)dev_points.p(), win_siz, win_cnt);
+    (fix_base_multi_scalar_multiplication_g2<alt_bn128::fr_t, alt_bn128::g2_t>)<<<14, 510>>>((alt_bn128::g2_t*)dev_points.p(), (alt_bn128::fr_t*)dev_scalars.p(), n, (alt_bn128::g2_t*)dev_uni.p());
     CUDA_DEBUG;
     timer.stop();
 
@@ -46,13 +45,13 @@ int main(int argc, char *argv[])
 
     CUDA_DEBUG;
     timer.start();
-    multi_scalar_multiplication_g2<alt_bn128::fr_t, alt_bn128::g2_t>(n, (alt_bn128::fr_t*)dev_scalars.p(), (alt_bn128::g2_t*)dev_points.p(), (alt_bn128::g2_t*)dev_points.p() + 2*n, win_siz, win_cnt, bucket_cnt, n);
+    light_msmg2<alt_bn128::fr_t, alt_bn128::g2_t>(n, (alt_bn128::fr_t*)dev_scalars.p(), (alt_bn128::g2_t*)dev_points.p(), (alt_bn128::g2_t*)dev_res.p(), win_siz, win_cnt, bucket_cnt);
     CUDA_DEBUG;
     timer.stop();
+    dev_res.load();
 
-    xpu::vector<libff::alt_bn128_G2> points(n+1, xpu::mem_policy::cross_platform);
-    layout_switch<<<216, 1024>>>((alt_bn128::g2_t*)points.p(), (alt_bn128::g2_t*)dev_points.p(), n+1);
-    points.load();
+    xpu::vector<libff::alt_bn128_G2> points(n, xpu::mem_policy::cross_platform);
+    layout_switch<<<14, 1024>>>((alt_bn128::g2_t*)points.p(), (alt_bn128::g2_t*)dev_points.p(), n);
     const int num_threads = omp_get_max_threads();
     timer.start();
     std::vector<libff::alt_bn128_G2> local_acc(num_threads, libff::alt_bn128_G2::zero());
@@ -65,7 +64,7 @@ int main(int argc, char *argv[])
     for (size_t i = 1; i < num_threads; i++) local_acc[0] = local_acc[0] + local_acc[i];
     timer.stop("Parallel Acuumulation");
 
-    assert(local_acc[0] == points[n]);
+    assert(local_acc[0] == dev_res[0]);
     printf("Everything is OK!\n");
 
     return 0;
