@@ -22,6 +22,12 @@ public:
 
     __device__ jacobian_t() {}
     __device__ jacobian_t(const field_t& x, const field_t& y, const field_t& z) : X(x), Y(y), Z(z) {}
+    __device__ void set_X(const field_t& x) { X = x; }
+    __device__ void set_Y(const field_t& y) { Y = y; }
+    __device__ void set_Z(const field_t& z) { Z = z; }
+    __device__ field_t out_X() { return X; }
+    __device__ field_t out_Y() { return Y; }
+    __device__ field_t out_Z() { return Z; }
 
     class affine_t { friend jacobian_t;
         field_t X, Y;
