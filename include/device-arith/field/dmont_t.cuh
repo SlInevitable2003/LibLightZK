@@ -97,6 +97,27 @@ public:
         return ret;
     }
 
+    static inline dmont_t csel(const dmont_t &a, const dmont_t &b, int sel_a)
+    {
+        dmont_t ret;
+        asm("{ .reg.pred %sel_a;");
+        asm("setp.ne.s32 %sel_a, %0, 0;" : : "r"(sel_a));
+        asm("selp.u32 %0, %1, %2, %sel_a;" : "=r"(ret.even) : "r"(a.even), "r"(b.even));
+        asm("}");
+        return ret;
+    }
+
+    inline bool is_zero() const
+    {
+        uint32_t me = even, other;
+        for (size_t i = 1; i < n; i++) {
+            other = __shfl_xor_sync(__activemask(), me, i);
+            me |= other;
+        }
+
+        return me == 0;
+    }
+
     inline dmont_t &operator+=(const dmont_t &b)
     {
         uint32_t carry;
@@ -187,8 +208,20 @@ public:
         if (laneid() % n == 0) high = 0;
         cadd_n(&even, &high, &carry);
         final_subc(carry);
+        return *this;
     }
     friend inline dmont_t operator*(dmont_t a, const dmont_t &b) { return a *= b; }
+
+    inline dmont_t &operator<<=(unsigned l)
+    {
+        while (l--)
+        {
+            (*this) += (*this);
+        }
+
+        return *this;
+    }
+    friend inline dmont_t operator<<(dmont_t a, unsigned l) { return a <<= l; }
 
     inline dmont_t &sqr()
     {
